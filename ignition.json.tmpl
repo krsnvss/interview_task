@@ -1,0 +1,115 @@
+{
+    "ignition": {
+        "config": {},
+        "security": {
+            "tls": {}
+        },
+        "timeouts": {},
+        "version": "2.3.0"
+    },
+    "networkd": {
+        "units": [
+            {
+                "contents": "[Match]\nName=${ip_dev}\n\n[Network]\nDNS=${dns_addr}\nAddress=${ip_addr}\nGateway=${gw_addr}\n",
+                "name": "00-${ip_dev}.network"
+            }
+        ]
+    },
+    "passwd": {
+        "users": [
+            {
+                "groups": [
+                    "sudo",
+                    "wheel",
+                    "docker"
+                ],
+                "homeDir": "/home/${user}",
+                "name": "${user}",
+                "passwordHash": "${password}",
+                "sshAuthorizedKeys": [
+                    "${ssh_key}"
+                ],
+                "shell": "/bin/bash"
+            }
+        ]
+    },
+    "storage": {
+        "directories": [
+            {
+                "filesystem": "root",
+                "group": {
+                    "name": "root"
+                },
+                "path": "/opt/bin",
+                "user": {
+                    "name": "root"
+                },
+                "mode": 493
+            }
+        ],
+        "files": [
+            {
+                "filesystem": "root",
+                "path": "/etc/hostname",
+                "contents": {
+                    "source": "data:,${hostname}",
+                    "verification": {}
+                },
+                "mode": 420
+            },
+            {
+                "filesystem": "root",
+                "path": "/etc/systemd/timesyncd.conf",
+                "contents": {
+                    "source": "data:,%5BTime%5D%0ANTP%3D%{ for addr in ntp_addrs ~}${addr}%20%{ endfor ~}%0AFallbackNTP%3D%{ for addr in ntp_fallback_addrs ~}${addr}%20%{ endfor ~}%0A%23RootDistanceMaxSec%3D5%0A%23PollIntervalMinSec%3D32%0A%23PollIntervalMaxSec%3D2048%0A%23SaveIntervalSec%3D60%0A",
+                    "verification": {}
+                },
+                "mode": 420
+            },
+            {
+                "filesystem": "root",
+                "path": "/opt/web-srv/prepare_host.sh",
+                "contents": {
+                    "source": "data:,%23!%2Fbin%2Fbash%0AHISTCONTROL%3Dignorespace%0ADOCKER_CONFIG%3D%24%7BDOCKER_CONFIG%3A-%24HOME%2F.docker%7D%0Aif%20!%20%5B%20-d%20%22%24DOCKER_CONFIG%2Fcli-plugins%22%20%5D%3B%20then%0A%20%20%20%20mkdir%20-p%20%24DOCKER_CONFIG%2Fcli-plugins%0Afi%0Aif%20!%20%5B%20-f%20%22%24DOCKER_CONFIG%2Fcli-plugins%2Fdocker-compose%22%20%5D%3B%20then%0A%20%20%20%20curl%20-SL%20https%3A%2F%2Fgithub.com%2Fdocker%2Fcompose%2Freleases%2Fdownload%2Fv2.17.2%2Fdocker-compose-linux-x86_64%20-o%20%24DOCKER_CONFIG%2Fcli-plugins%2Fdocker-compose%0A%20%20%20%20chmod%20%2Bx%20%24DOCKER_CONFIG%2Fcli-plugins%2Fdocker-compose%0Afi%0Adocker%20compose%20-f%20task_one.yml%20up%20-d%0Asudo%20cp%20websrv.conf.template%20%24(docker%20volume%20inspect%20--format%20'%7B%7Bjson%20.Mountpoint%7D%7D'%20web-srv_templates%20%7Cawk%20'%7Bgsub(%2F%22%2F%2C%20%22%22%2C%20%241)%3Bprint%20%241%7D')%2F%0Adocker%20compose%20-f%20task_one.yml%20restart%0A",
+                    "verification": {}
+                },
+                "mode": 493
+            },
+            {
+                "filesystem": "root",
+                "path": "/opt/web-srv/websrv.conf.template",
+                "contents": {
+                    "source": "data:,server%20%7B%0A%20%20listen%20%24%7BNGINX_PORT%7D%3B%0A%20%20location%20%2F%20%7B%0A%20%20%20%20%20%20return%20200%20%24%7BNGINX_GREETING%7D%3B%0A%20%20%20%20%20%20add_header%20Content-Type%20text%2Fplain%20always%3B%0A%20%20%7D%0A%7D%0A",
+                    "verification": {}
+                },
+                "mode": 420
+            },
+            {
+                "filesystem": "root",
+                "path": "/opt/web-srv/task_one.yml",
+                "contents": {
+                    "source": "data:,version%3A%20%222%22%0Avolumes%3A%0A%20%20templates%3A%0Aservices%3A%0A%20%20web-01%3A%0A%20%20%20%20container_name%3A%20web-01%0A%20%20%20%20image%3A%20nginx%3A1.22%0A%20%20%20%20volumes%3A%0A%20%20%20%20-%20templates%3A%2Fetc%2Fnginx%2Ftemplates%0A%20%20%20%20ports%3A%0A%20%20%20%20-%20%228081%3A8081%22%0A%20%20%20%20environment%3A%0A%20%20%20%20-%20NGINX_HOST%3Dwebsrv1%0A%20%20%20%20-%20NGINX_PORT%3D8081%0A%20%20%20%20-%20NGINX_GREETING%3D%22Welcome%20to%20the%20first%20webserver!%22%0A%20%20%20%20restart%3A%20unless-stopped%0A%20%20web-02%3A%0A%20%20%20%20container_name%3A%20web-02%0A%20%20%20%20image%3A%20nginx%3A1.22%0A%20%20%20%20volumes%3A%0A%20%20%20%20-%20templates%3A%2Fetc%2Fnginx%2Ftemplates%0A%20%20%20%20ports%3A%0A%20%20%20%20-%20%228082%3A8082%22%0A%20%20%20%20environment%3A%0A%20%20%20%20-%20NGINX_HOST%3Dwebsrv2%0A%20%20%20%20-%20NGINX_PORT%3D8082%0A%20%20%20%20-%20NGINX_GREETING%3D%22Welcome%20to%20the%20second%20webserver!%22%0A%20%20%20%20restart%3A%20unless-stopped%0A%20%20web-03%3A%0A%20%20%20%20container_name%3A%20web-01%0A%20%20%20%20image%3A%20nginx%3A1.22%0A%20%20%20%20volumes%3A%0A%20%20%20%20-%20templates%3A%2Fetc%2Fnginx%2Ftemplates%0A%20%20%20%20ports%3A%0A%20%20%20%20-%20%228083%3A8083%22%0A%20%20%20%20environment%3A%0A%20%20%20%20-%20NGINX_HOST%3Dwebsrv3%0A%20%20%20%20-%20NGINX_PORT%3D8083%0A%20%20%20%20-%20NGINX_GREETING%3D%22Welcome%20to%20the%20third%20webserver!%22%0A%20%20%20%20restart%3A%20unless-stopped%0A",
+                    "verification": {}
+                },
+                "mode": 416
+            },
+            {
+                "filesystem": "root",
+                "path": "/etc/coreos/update.conf",
+                "contents": {
+                    "source": "data:,GROUP%3Dstable%0AREBOOT_STRATEGY%3D%22reboot%22",
+                    "verification": {}
+                },
+                "mode": 420
+            }
+        ],
+        "links": [
+            {
+                "filesystem": "root",
+                "path": "/etc/localtime",
+                "target": "/usr/share/zoneinfo/${tz}"
+            }
+        ]
+    },
+    "systemd": {}
+}

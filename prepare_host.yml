@@ -1,0 +1,146 @@
+---
+# tasks to create test server for job interview
+- name: Create test containers
+  hosts: interview
+  vars:
+    user_pass: "EnterYourPasswordHere"
+  tasks:
+    - name: Install Docker
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - docker.io
+          - python3-docker
+          - docker-compose
+          - curl
+          - vim
+        state: present
+        update_cache: true
+
+    - name: Disable iptables for docker
+      ansible.builtin.lineinfile:
+        path: /etc/docker/daemon.json
+        line: '{ "iptables" : false }'
+        insertbefore: EOF
+        create: true
+        mode: "0644"
+      notify: Restart docker
+
+    - name: Create user
+      ansible.builtin.user:
+        name: candidate
+        password: "{{ user_pass | password_hash('sha512') }}"
+        groups:
+          - sudo
+          - docker
+          - wheel
+        shell: /bin/bash
+
+    - name: Create docker volumes
+      community.docker.docker_volume:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - websrv-01-config
+        - websrv-02-config
+        - websrv-03-config
+        - proxysrv-01-config
+
+    - name: Copy configuration files
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/var/lib/docker/volumes/{{ item }}/_data/foobar.conf"
+        owner: root
+        mode: "0644"
+      loop:
+        - websrv-01-config
+        - websrv-02-config
+        - websrv-03-config
+
+    - name: Create proxy configuration file
+      ansible.builtin.template:
+        src: proxysrv-01-config.j2
+        dest: /var/lib/docker/volumes/proxysrv-01-config/_data/foobar.conf
+        owner: root
+        mode: "0644"
+
+    - name: Create webserver 1 docker container
+      community.docker.docker_container:
+        name: "websrv-01"
+        image: nginx:1.22
+        restart_policy: unless-stopped
+        network_mode: bridge
+        published_ports:
+          - "8081:8081"
+        volumes:
+          - websrv-01-config:/etc/nginx/conf.d
+
+    - name: Create webserver 2 docker container
+      community.docker.docker_container:
+        name: "websrv-02"
+        image: nginx:1.22
+        restart_policy: unless-stopped
+        network_mode: bridge
+        published_ports:
+          - "8082:8082"
+        volumes:
+          - websrv-02-config:/etc/nginx/conf.d
+
+    - name: Create webserver 3 docker container
+      community.docker.docker_container:
+        name: "websrv-03"
+        image: nginx:1.22
+        restart_policy: unless-stopped
+        network_mode: bridge
+        published_ports:
+          - "8083:8083"
+        volumes:
+          - websrv-03-config:/etc/nginx/conf.d
+
+    - name: Create proxy server docker container
+      community.docker.docker_container:
+        name: "easteregg"
+        image: nginx:1.22
+        restart_policy: unless-stopped
+        network_mode: bridge
+        published_ports:
+          - "80:8080"
+        volumes:
+          - proxysrv-01-config:/etc/nginx/conf.d
+      tags:
+        - answer
+
+    - name: Allow OpenSSH
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
+        state: enabled
+
+    - name: Allow port range 8081-8083
+      community.general.ufw:
+        rule: allow
+        port: 8081:8083
+        proto: tcp
+
+    - name: Deny port 80/tcp
+      community.general.ufw:
+        rule: deny
+        direction: "out"
+        port: "80"
+        proto: tcp
+      tags:
+        - hard_mode
+
+    - name: Add wrong docker.io record
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "0.0.0.0 index.docker.io auth.docker.io registry-1.docker.io dseasb33srnrn.cloudfront.net production.cloudflare.docker.com"
+        insertbefore: EOF
+      tags:
+        - hard_mode
+
+  handlers:
+    - name: Restart docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
